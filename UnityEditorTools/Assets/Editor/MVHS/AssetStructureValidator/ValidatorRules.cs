@@ -145,7 +145,7 @@ namespace MVHS
 
             for (int i = 0; i < assetDirectories.Count; i++)
             {
-                if (string.Equals(assetDirectories[i], directory))
+                if (string.Equals(assetDirectories[i], directory.ToLower(), StringComparison.OrdinalIgnoreCase))
                 {
                     return i;
                 }
@@ -169,7 +169,7 @@ namespace MVHS
             {
                 if (string.Equals(rule.extension, assetExtension, StringComparison.OrdinalIgnoreCase))
                 {
-                    return rule.requiredFolder.ToLower();
+                    return rule.requiredFolder;
                 }
             }
             return string.Empty;
