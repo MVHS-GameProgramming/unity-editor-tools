@@ -31,11 +31,12 @@ namespace MVHS
         {
             SceneDependencyViewer,
             GameObjectDependencyView,
-            Rules
+            Rules,
+            Orphans
         };
         private Tabs m_SelectedTab = Tabs.SceneDependencyViewer;
         private Tabs m_LastSelectedTab = Tabs.SceneDependencyViewer;
-        private readonly string[] m_TabLabels = { "Scene Dependency Viewer", "GameObject Dependency Viewer", "Rules" };
+        private readonly string[] m_TabLabels = {"Scene Dependency Viewer", "GameObject Dependency Viewer", "Rules", "Orphans"};
 
 
         // ─── Shared scroll positions (one per tab) ────────────────────────────────
@@ -65,6 +66,11 @@ namespace MVHS
         // ─── Scan state ───────────────────────────────────────────────────────────
         private GameObject m_LastScannedObject;
         private ScanResults m_LastScanResults = new ScanResults();
+        private List<string>  m_OrphanResults    = new List<string>();
+        private bool m_OrphanHasScanned = false;
+        private bool[] m_OrphanSelected;
+        private Vector2 m_OrphanScrollPos;
+        private int m_OrphanSceneCount;
 
         // Filter toggles shown above the results list
         private bool m_ShowPass = true;
@@ -129,6 +135,11 @@ namespace MVHS
             {
                 DrawRulesTab();
                 m_SelectedTab = Tabs.Rules;
+            }
+            else if (m_SelectedTab == Tabs.Orphans)
+            {
+                DrawOrphanScannerTab();
+                m_SelectedTab = Tabs.Orphans;
             }
         }
 
@@ -508,6 +519,241 @@ namespace MVHS
                 m_HintStyle);
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space(4);
+        }
+
+        private void DrawOrphanScannerTab()
+        {
+            EditorGUILayout.Space(8);
+            EditorGUILayout.LabelField("Orphan Scanner", m_SubHeaderStyle);
+            EditorGUILayout.Space(2);
+            EditorGUILayout.LabelField(
+                "Finds assets inside  Assets/Project/  that are not referenced by any " +
+                "scene, prefab, or asset in the project. Review carefully before deleting.",
+                m_HintStyle, GUILayout.Height(40));
+
+            EditorGUILayout.Space(6);
+
+            // ── Toolbar ────────────────────────────────────────────────────────
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(8);
+
+            GUI.backgroundColor = AccentBlue;
+            if (GUILayout.Button("Scan All Scenes + Prefabs", GUILayout.Height(28), GUILayout.Width(190)))
+                OnOrphanScanClicked();
+            GUI.backgroundColor = Color.white;
+
+            if (m_OrphanHasScanned && m_OrphanResults.Count > 0)
+            {
+                GUILayout.Space(8);
+
+                if (GUILayout.Button("All", EditorStyles.miniButton, GUILayout.Width(34), GUILayout.Height(18)))
+                    for (int i = 0; i < m_OrphanSelected.Length; i++) m_OrphanSelected[i] = true;
+
+                if (GUILayout.Button("None", EditorStyles.miniButton, GUILayout.Width(38), GUILayout.Height(18)))
+                    for (int i = 0; i < m_OrphanSelected.Length; i++) m_OrphanSelected[i] = false;
+
+                GUILayout.FlexibleSpace();
+
+                int checkedCount = 0;
+                foreach (var b in m_OrphanSelected) if (b) checkedCount++;
+
+                GUI.enabled = checkedCount > 0;
+                GUI.backgroundColor = FailRed;
+                if (GUILayout.Button($"Delete Selected ({checkedCount})", GUILayout.Height(28), GUILayout.Width(160)))
+                {
+                    if (EditorUtility.DisplayDialog(
+                        "Delete Orphaned Assets",
+                        $"Permanently delete {checkedCount} asset(s)?\n\n" +
+                        "This cannot be undone. Make sure you have committed or backed up your project first.",
+                        "Delete", "Cancel"))
+                    {
+                        OnDeleteOrphansClicked();
+                    }
+                }
+                GUI.backgroundColor = Color.white;
+                GUI.enabled = true;
+            }
+
+            GUILayout.Space(8);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(8);
+            DrawDivider();
+
+            // ── Pre-scan empty state ───────────────────────────────────────────
+            if (!m_OrphanHasScanned)
+            {
+                DrawEmptyState("Click  Scan All Scenes + Prefabs  to find unreferenced assets.");
+                return;
+            }
+
+            // ── Scan summary ───────────────────────────────────────────────────
+            EditorGUILayout.Space(4);
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(8);
+            EditorGUILayout.LabelField(
+                $"Scanned {m_OrphanSceneCount} scene(s) + all prefabs in Assets/Project/",
+                m_HintStyle);
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(4);
+            DrawDivider();
+
+            if (m_OrphanResults.Count == 0)
+            {
+                DrawEmptyState("✓  No orphaned assets found. Your project folder is clean.");
+                return;
+            }
+
+            // ── Column headers ─────────────────────────────────────────────────
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(8);
+            EditorGUILayout.LabelField("", GUILayout.Width(20));
+            EditorGUILayout.LabelField("Ext", EditorStyles.miniLabel, GUILayout.Width(72));
+            EditorGUILayout.LabelField("Asset Path", EditorStyles.miniLabel);
+            GUILayout.Space(8);
+            EditorGUILayout.EndHorizontal();
+            DrawDivider();
+
+            // ── Orphan rows ────────────────────────────────────────────────────
+            m_OrphanScrollPos = EditorGUILayout.BeginScrollView(m_OrphanScrollPos);
+
+            for (int i = 0; i < m_OrphanResults.Count; i++)
+            {
+                string path = m_OrphanResults[i];
+                string ext = Path.GetExtension(path).ToLower();
+
+                var rowRect = EditorGUILayout.BeginHorizontal(GUILayout.Height(20));
+                if (i % 2 == 0)
+                    EditorGUI.DrawRect(rowRect, new Color(0f, 0f, 0f, 0.07f));
+
+                GUILayout.Space(8);
+
+                m_OrphanSelected[i] = EditorGUILayout.Toggle(m_OrphanSelected[i], GUILayout.Width(20));
+
+                GUI.backgroundColor = WarnYellow;
+                GUILayout.Label(string.IsNullOrEmpty(ext) ? "(none)" : ext,
+                    EditorStyles.miniButton, GUILayout.Width(62));
+                GUI.backgroundColor = Color.white;
+
+                GUILayout.Space(4);
+
+                string display = TruncatePath(path, 52);
+                EditorGUILayout.LabelField(new GUIContent(display, path));
+
+                GUILayout.Space(8);
+                EditorGUILayout.EndHorizontal();
+            }
+
+            EditorGUILayout.EndScrollView();
+
+            // ── Footer ─────────────────────────────────────────────────────────
+            EditorGUILayout.Space(4);
+            DrawDivider();
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Space(8);
+            GUI.color = WarnYellow;
+            EditorGUILayout.LabelField(
+                $"⚠  {m_OrphanResults.Count} orphaned asset(s) found. " +
+                "Check each one before deleting — some may be intentionally unused.",
+                m_HintStyle);
+            GUI.color = Color.white;
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.Space(4);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        //  Orphan scan logic
+        // ─────────────────────────────────────────────────────────────────────────
+
+        private void OnOrphanScanClicked()
+        {
+            m_OrphanResults.Clear();
+            m_OrphanHasScanned = false;
+
+            // ── 1. Collect every asset referenced by all scenes + prefabs ─────
+            var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Every scene in the project (not just the open one)
+            string[] sceneGuids = AssetDatabase.FindAssets("t:Scene");
+            m_OrphanSceneCount = sceneGuids.Length;
+
+            var allRoots = new List<string>();
+            foreach (var guid in sceneGuids)
+                allRoots.Add(AssetDatabase.GUIDToAssetPath(guid));
+
+            // Every prefab inside Assets/Project/
+            string[] prefabGuids = AssetDatabase.FindAssets("t:Prefab", new[] { "Assets/Project" });
+            foreach (var guid in prefabGuids)
+                allRoots.Add(AssetDatabase.GUIDToAssetPath(guid));
+
+            // GetDependencies expands everything recursively in one call
+            if (allRoots.Count > 0)
+            {
+                string[] deps = AssetDatabase.GetDependencies(allRoots.ToArray(), recursive: true);
+                foreach (var d in deps)
+                    referenced.Add(d);
+            }
+
+            // Mark the root files themselves as referenced too
+            foreach (var r in allRoots)
+                referenced.Add(r);
+
+            // ── 2. Find every asset inside Assets/Project/ ─────────────────────
+            string[] projectAssetGuids = AssetDatabase.FindAssets("", new[] { "Assets/Project" });
+
+            foreach (var guid in projectAssetGuids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+
+                if (AssetDatabase.IsValidFolder(path)) continue;
+                if (path.EndsWith(".meta", StringComparison.OrdinalIgnoreCase)) continue;
+
+                if (!referenced.Contains(path))
+                    m_OrphanResults.Add(path);
+            }
+
+            m_OrphanResults.Sort();
+            m_OrphanSelected = new bool[m_OrphanResults.Count]; // all unchecked by default
+            m_OrphanHasScanned = true;
+
+            Debug.Log($"[AssetValidator] Orphan scan: {m_OrphanResults.Count} unreferenced asset(s) in Assets/Project/");
+            Repaint();
+        }
+
+        private void OnDeleteOrphansClicked()
+        {
+            var toDelete = new List<string>();
+            for (int i = 0; i < m_OrphanResults.Count; i++)
+                if (m_OrphanSelected[i]) toDelete.Add(m_OrphanResults[i]);
+
+            int deleted = 0;
+            int failed = 0;
+
+            foreach (var path in toDelete)
+            {
+                if (AssetDatabase.DeleteAsset(path))
+                    deleted++;
+                else
+                {
+                    Debug.LogWarning($"[AssetValidator] Could not delete: {path}");
+                    failed++;
+                }
+            }
+
+            // Rebuild list removing successfully deleted entries
+            var deletedSet = new HashSet<string>(toDelete.GetRange(0, deleted),
+                StringComparer.OrdinalIgnoreCase);
+            m_OrphanResults.RemoveAll(p => deletedSet.Contains(p));
+            m_OrphanSelected = new bool[m_OrphanResults.Count];
+
+            AssetDatabase.Refresh();
+
+            string summary = $"Deleted {deleted} asset(s).";
+            if (failed > 0) summary += $"\n{failed} could not be deleted — check the Console.";
+            EditorUtility.DisplayDialog("Delete Complete", summary, "OK");
+
+            Debug.Log($"[AssetValidator] Orphan delete: {deleted} deleted, {failed} failed.");
+            Repaint();
         }
 
         // ─────────────────────────────────────────────────────────────────────────
