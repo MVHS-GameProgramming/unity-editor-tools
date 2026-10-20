@@ -145,7 +145,7 @@ namespace MVHS
 
             for (int i = 0; i < assetDirectories.Count; i++)
             {
-                if (string.Equals(assetDirectories[i], directory.ToLower(), StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(assetDirectories[i], directory.ToLower(), StringComparison.Ordinal))
                 {
                     return i;
                 }
