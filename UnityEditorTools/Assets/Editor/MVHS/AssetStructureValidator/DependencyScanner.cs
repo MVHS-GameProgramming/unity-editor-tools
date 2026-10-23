@@ -95,6 +95,34 @@ namespace MVHS
             
         }
 
+        public static ScanResults Scan(String rootFolder, ValidatorRules validatorRules)
+        {
+            // Get all asset paths under the root folder, excluding Dev
+            string[] allAssetGuids = AssetDatabase.FindAssets("", new[] { rootFolder });
+
+            HashSet<string> allPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string guid in allAssetGuids)
+            {
+                string assetPath = AssetDatabase.GUIDToAssetPath(guid);
+
+                if (assetPath.Contains("Assets/Project/Dev/", StringComparison.OrdinalIgnoreCase))
+                    continue; // skip Dev assets as direct scan targets
+
+                allPaths.Add(assetPath);
+
+                // Dependencies of non-Dev assets are always included, even if they're in Dev
+                string[] dependencies = AssetDatabase.GetDependencies(assetPath, recursive: true);
+                foreach (string dep in dependencies)
+                {
+                    if (dep.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+                        allPaths.Add(dep); // no Dev skip here
+                }
+            }
+
+            return GenerateScanResults(allPaths.ToList(), validatorRules);
+        }
+
         public static ScanResults GenerateScanResults(List<string> projectAssetPaths, ValidatorRules validatorRules)
         {
             if (projectAssetPaths.Count == 0)
@@ -110,6 +138,18 @@ namespace MVHS
                 AssetStatus assetStatus;
 
                 string assetExtension = Path.GetExtension(assetPath).ToLower();
+
+                // TODO: Make fix in MVHS Unity Editor Tools
+                // Only skip Dev scenes, not Dev assets referenced by real prefabs
+                if (assetPath.Contains("Assets/Project/Dev/", StringComparison.OrdinalIgnoreCase)
+                    && assetExtension == ".unity")
+                {
+                    continue;
+                }
+
+                // Skip folders theselves
+                if (AssetDatabase.IsValidFolder(assetPath))
+                    continue;
 
                 string requiredFolder = "";
                 ValidateResult validateResult = validatorRules.Validate(assetPath);
@@ -131,6 +171,8 @@ namespace MVHS
                 }
 
 
+
+
                 DependencyResult dependencyResult = new DependencyResult
                 {
                     assetPath = assetPath,
@@ -142,7 +184,7 @@ namespace MVHS
             }
 
             // Sort: failures first
-            results.dependencyResults.Sort((a, b) => a.status.CompareTo(b.status));
+            results.dependencyResults.Sort((a, b) => b.status.CompareTo(a.status));
 
             Debug.Log($"[AssetValidator] Scan Complete {projectAssetPaths.Count} dependencies, {results.failCount} violation(s).");
 

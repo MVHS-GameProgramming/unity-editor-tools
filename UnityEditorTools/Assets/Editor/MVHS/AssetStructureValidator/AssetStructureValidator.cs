@@ -29,14 +29,15 @@ namespace MVHS
         // ─── Tab state ────────────────────────────────────────────────────────────
         private enum Tabs
         {
+            ProjectDependencyViewer,
             SceneDependencyViewer,
             GameObjectDependencyView,
             Rules,
             Orphans
         };
-        private Tabs m_SelectedTab = Tabs.SceneDependencyViewer;
-        private Tabs m_LastSelectedTab = Tabs.SceneDependencyViewer;
-        private readonly string[] m_TabLabels = {"Scene Dependency Viewer", "GameObject Dependency Viewer", "Rules", "Orphans"};
+        private Tabs m_SelectedTab = Tabs.ProjectDependencyViewer;
+        private Tabs m_LastSelectedTab = Tabs.ProjectDependencyViewer;
+        private readonly string[] m_TabLabels = {"Project Dependency Viewer", "Scene Dependency Viewer", "GameObject Dependency Viewer", "Rules", "Orphans"};
 
 
         // ─── Shared scroll positions (one per tab) ────────────────────────────────
@@ -80,7 +81,7 @@ namespace MVHS
         // ─────────────────────────────────────────────────────────────────────────
         //  Open the window
         // ─────────────────────────────────────────────────────────────────────────
-        [MenuItem("Tools/MVHS/Asset Structure Validator")]
+        [MenuItem("Tools/MVHS/Asset Structure Validator", false, 30)]
         public static void OpenWindow()
         {
             var window = GetWindow<AssetStructureValidator>();
@@ -109,9 +110,21 @@ namespace MVHS
             DrawDivider();
 
             // Route to the active tab
-            if (m_SelectedTab == Tabs.SceneDependencyViewer)
+
+            if (m_SelectedTab == Tabs.ProjectDependencyViewer)
             {
-                if (m_LastSelectedTab == Tabs.GameObjectDependencyView)
+                if (m_LastSelectedTab == Tabs.SceneDependencyViewer || m_LastSelectedTab == Tabs.GameObjectDependencyView)
+                {
+                    m_LastScannedObject = null;
+                    m_LastSelectedObject = null;
+                    m_LastScanResults.Clear();
+                }
+                DrawProjectDependencyViewerTab();
+                m_LastSelectedTab = Tabs.ProjectDependencyViewer;
+            }
+            else if (m_SelectedTab == Tabs.SceneDependencyViewer)
+            {
+                if (m_LastSelectedTab == Tabs.GameObjectDependencyView || m_LastSelectedTab == Tabs.ProjectDependencyViewer)
                 {
                     m_LastScannedObject = null;
                     m_LastSelectedObject = null;
@@ -122,7 +135,7 @@ namespace MVHS
             }
             else if (m_SelectedTab == Tabs.GameObjectDependencyView)
             {
-                if (m_LastSelectedTab == Tabs.SceneDependencyViewer)
+                if (m_LastSelectedTab == Tabs.SceneDependencyViewer || m_LastSelectedTab == Tabs.ProjectDependencyViewer)
                 {
                     m_LastScannedObject = null;
                     m_LastSelectedObject = null;
@@ -164,6 +177,40 @@ namespace MVHS
             m_SelectedTab = (Tabs)GUILayout.Toolbar((int)m_SelectedTab, m_TabLabels, GUILayout.Height(28));
             GUILayout.Space(8);
             EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawProjectDependencyViewerTab()
+        {
+            GUI.backgroundColor = AccentBlue;
+            if (GUILayout.Button("Scan Dependencies", GUILayout.Height(28), GUILayout.Width(150)))
+                OnScanProjectClicked();
+            GUI.backgroundColor = Color.white;
+            GUI.enabled = true;
+
+            // Clear button — only shown after a scan
+            if (m_LastScanResults.HasScanned)
+            {
+                if (GUILayout.Button("Clear", GUILayout.Height(28), GUILayout.Width(60)))
+                {
+                    m_LastScanResults.Clear();
+                    m_LastScannedObject = null;
+                }
+            }
+
+            GUILayout.Space(8);
+
+
+            EditorGUILayout.Space(8);
+            DrawDivider();
+
+            // ── Pre-scan empty state ───────────────────────────────────────────
+            if (!m_LastScanResults.HasScanned)
+            {
+                DrawEmptyState("Click Scan Dependencies to inspect project.");
+                return;
+            }
+
+            DrawScanResults();
         }
 
         private void DrawSceneDependencyViewerTab()
@@ -825,6 +872,13 @@ namespace MVHS
         // ─────────────────────────────────────────────────────────────────────────
         //  Scanner
         // ─────────────────────────────────────────────────────────────────────────
+
+        private void OnScanProjectClicked()
+        {
+            m_LastScanResults = DependencyScanner.Scan("Assets/Project", m_ValidatorRules);
+            m_LastScannedObject = null;
+            Repaint();
+        }
 
         private void OnScaneSceneClicked()
         {

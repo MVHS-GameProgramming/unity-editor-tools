@@ -4,9 +4,18 @@ using UnityEngine;
 
 namespace MVHS
 {
+    public enum AssetPackageURLCheckMode
+    {
+        HTTPS,
+        GoogleDrive,
+        None
+    }
 
     public static class AssetPipelineConfig
     {
+
+        public static AssetPackageURLCheckMode assetPackageURLCheckMode = AssetPackageURLCheckMode.GoogleDrive;
+
         public static string[] projectFolders =
         {
             "Assets/Project/",
@@ -31,6 +40,17 @@ namespace MVHS
             "Assets/Project/ScriptableObjects/",
             "Assets/Project/Scripts/",
             "Assets/Project/UI/"
+        };
+
+        public static string[] binaryExtensions =
+        {
+            ".png", ".jpg", ".jpeg", ".tga", ".psd", ".bmp", ".exr", ".hdr",
+            ".tiff", ".tif",
+            ".wav", ".mp3",
+            ".ogg", ".aiff", ".aif",
+            ".fbx", ".obj", ".blend", ".dae", ".3ds",
+            ".ttf", ".otf",
+            ".mp4", ".mov", ".avi", ".webm"
         };
         
         public static string GetManifestFolderAssetPath()

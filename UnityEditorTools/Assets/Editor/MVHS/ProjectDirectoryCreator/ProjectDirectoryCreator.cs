@@ -10,7 +10,7 @@ namespace MVHS
         /// <summary>
         /// Create the default MVHS project directory. Only missing files will be created.
         /// </summary>
-        [MenuItem("Tools/MVHS/Project Directory Creator")]
+        [MenuItem("Tools/MVHS/Utilities/Project Directory Creator", false, 100)]
         public static void CreateProjectDirectory()
         {
 

@@ -28,12 +28,6 @@ namespace MVHS
         public string exportDate;
 
         /// <summary>
-        /// Optional note describing what was added or changed.
-        /// Helps teammates understand what this package contains.
-        /// </summary>
-        public string description;
-
-        /// <summary>
         /// List of folders that contained assets at the time of export.
         /// Only folders with actual files are included.
         /// </summary>
@@ -54,4 +48,5 @@ namespace MVHS
         /// </summary>
         public List<string> files = new List<string>();
     }
+
 }

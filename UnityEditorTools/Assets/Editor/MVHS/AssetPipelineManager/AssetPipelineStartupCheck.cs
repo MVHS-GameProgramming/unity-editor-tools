@@ -22,7 +22,7 @@ namespace MVHS
     [InitializeOnLoad]
     public static class AssetPipelineStartupCheck
     {
-        [MenuItem("Tools/MVHS/Asset Pipeline Startup Check")]
+        //[MenuItem("Tools/MVHS/Asset Pipeline Startup Check")]
         public static void RunCheck()
         {
             RunStartupCheck(true);

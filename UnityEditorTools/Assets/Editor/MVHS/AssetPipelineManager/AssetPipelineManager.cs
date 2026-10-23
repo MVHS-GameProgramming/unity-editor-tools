@@ -8,22 +8,21 @@ using UnityEngine;
 namespace MVHS
 {
     /// <summary>
-    /// Editor window for exporting and importing asset packages.
+    /// Editor window for importing asset packages and monitoring folder status.
     ///
-    /// Export: Gathers all assets from configured folders, bundles them into a
-    ///         .unitypackage, and generates a manifest file that records what
-    ///         was exported. The manifest is committed to git so teammates
-    ///         know what assets to expect after importing.
+    /// Shows which folders have missing binary assets and which Google Drive
+    /// package each manifest points to, so students know exactly what to import.
     ///
-    /// Import: Lets a student browse for a .unitypackage and import it.
+    /// Export is handled by Pre-PR Checklist (Tools > MVHS > Pre-PR Checklist).
     ///
-    /// The manifest system allows multiple students to export independently
-    /// without merge conflicts — each export creates a new manifest file.
-    ///
-    /// Usage: Tools > Asset Package Manager
+    /// Usage: Tools > MVHS > Asset Pipeline Manager
     /// </summary>
     public class AssetPipelineManager : EditorWindow
     {
+        // -------------------------------------------------------------------------
+        // Data Structures
+        // -------------------------------------------------------------------------
+
         public struct FolderStatus
         {
             public string path;
@@ -32,16 +31,18 @@ namespace MVHS
             public int expectedFileCount;
         }
 
-        //private AssetPipelineConfig m_Config;
-        private Vector2 m_ScrollPosition;
-
-        // Export fields.
-        private string m_ExporterName = "";
-        private string m_ExportDescription = "";
-
-        // Cached state.
-        private List<FolderStatus> m_FolderStatuses = new List<FolderStatus>();
-        private Dictionary<string, List<string>> m_ExpectedFiles = new Dictionary<string, List<string>>();
+        /// <summary>
+        /// One manifest file and its associated Drive URL (if recorded).
+        /// Used to display import guidance per-manifest.
+        /// </summary>
+        private struct ManifestImportInfo
+        {
+            public string manifestFileName;   // e.g. "manifest_apetr.json"
+            public string exportedBy;
+            public string exportDate;
+            public string driveUrl;           // from package_urls.json, empty if not recorded
+            public List<string> missingFiles; // files listed in this manifest not on disk
+        }
 
         public enum FolderState
         {
@@ -51,8 +52,24 @@ namespace MVHS
             Missing             // Folder doesn't exist on disk at all.
         }
 
+        // -------------------------------------------------------------------------
+        // Fields
+        // -------------------------------------------------------------------------
 
-        [MenuItem("Tools/MVHS/Asset Pipeline Manager")]
+        private Vector2 m_ScrollPosition;
+
+        // Cached state — rebuilt on Refresh().
+        private List<FolderStatus> m_FolderStatuses = new List<FolderStatus>();
+        private Dictionary<string, List<string>> m_ExpectedFiles = new Dictionary<string, List<string>>();
+
+        // Import guidance — manifests that have missing files, newest first.
+        private List<ManifestImportInfo> m_ManifestsNeedingImport = new List<ManifestImportInfo>();
+
+        // -------------------------------------------------------------------------
+        // Window Setup
+        // -------------------------------------------------------------------------
+
+        [MenuItem("Tools/MVHS/Asset Pipeline Manager", false, 20)]
         public static void ShowWindow()
         {
             var window = GetWindow<AssetPipelineManager>("Asset Pipeline Manager");
@@ -61,7 +78,6 @@ namespace MVHS
 
         private void OnEnable()
         {
-            LoadExporterName();
             Refresh();
         }
 
@@ -70,15 +86,19 @@ namespace MVHS
             Refresh();
         }
 
+        // -------------------------------------------------------------------------
+        // Refresh — rebuild all cached state
+        // -------------------------------------------------------------------------
 
         private void Refresh()
         {
             LoadCombinedManifest();
             RefreshFolderStatuses();
+            BuildManifestImportList();
         }
 
         // -------------------------------------------------------------------------
-        // Manifest Loading — combines all manifest files into one picture
+        // Manifest Loading — combines all manifest files into one union picture
         // -------------------------------------------------------------------------
 
         private void LoadCombinedManifest()
@@ -86,16 +106,16 @@ namespace MVHS
             m_ExpectedFiles.Clear();
             string diskManifestPath = AssetPipelineConfig.GetDiskPath(AssetPipelineConfig.GetManifestFolderAssetPath());
 
-
             if (!Directory.Exists(diskManifestPath))
-            {
                 return;
-            }
 
             string[] manifestFiles = Directory.GetFiles(diskManifestPath, "*.json");
 
             foreach (string file in manifestFiles)
             {
+                // Skip package_urls.json — it's not a manifest.
+                if (Path.GetFileName(file) == "package_urls.json") continue;
+
                 try
                 {
                     string json = File.ReadAllText(file);
@@ -106,17 +126,12 @@ namespace MVHS
                     foreach (var folder in manifest.folders)
                     {
                         if (!m_ExpectedFiles.ContainsKey(folder.folderPath))
-                        {
                             m_ExpectedFiles[folder.folderPath] = new List<string>();
-                        }
 
-                        // Merge file lists — union of all manifests.
                         foreach (string f in folder.files)
                         {
                             if (!m_ExpectedFiles[folder.folderPath].Contains(f))
-                            {
                                 m_ExpectedFiles[folder.folderPath].Add(f);
-                            }
                         }
                     }
                 }
@@ -126,6 +141,10 @@ namespace MVHS
                 }
             }
         }
+
+        // -------------------------------------------------------------------------
+        // Folder Status
+        // -------------------------------------------------------------------------
 
         private static bool AssetPathExists(string assetPath)
         {
@@ -141,21 +160,16 @@ namespace MVHS
             foreach (string folder in AssetPipelineConfig.projectFolders)
             {
                 string projectRoot = Path.GetDirectoryName(Application.dataPath);
-                string diskPath = Path.Combine(projectRoot, folder);
-                diskPath = diskPath.Replace("\\", "/");
+                string diskPath = Path.Combine(projectRoot, folder).Replace("\\", "/");
 
                 bool existsOnDisk = Directory.Exists(diskPath);
                 int diskCount = 0;
 
                 if (existsOnDisk)
                 {
-                    string[] files = Directory.GetFiles(diskPath, "*.*", SearchOption.AllDirectories);
-                    foreach (string file in files)
+                    foreach (string file in Directory.GetFiles(diskPath, "*.*", SearchOption.AllDirectories))
                     {
-                        if (!file.EndsWith(".meta"))
-                        {
-                            diskCount++;
-                        }
+                        if (!file.EndsWith(".meta")) diskCount++;
                     }
                 }
 
@@ -163,45 +177,131 @@ namespace MVHS
                 int expectedCount = hasManifestEntry ? m_ExpectedFiles[folder].Count : 0;
 
                 int missingCount = 0;
-
                 if (hasManifestEntry)
                 {
                     foreach (string expectedFile in m_ExpectedFiles[folder])
                     {
-                        if (!AssetPathExists(expectedFile))
-                        {
-                            missingCount++;
-                        }
+                        if (!AssetPathExists(expectedFile)) missingCount++;
                     }
                 }
 
                 FolderState state;
-
                 if (hasManifestEntry && missingCount > 0)
-                {
                     state = FolderState.NeedsImport;
-                }
                 else if (diskCount > 0)
-                {
                     state = FolderState.Ready;
-                }
                 else if (!existsOnDisk)
-                {
                     state = FolderState.Missing;
-                }
                 else
-                {
                     state = FolderState.EmptyNoManifest;
-                }
 
                 m_FolderStatuses.Add(new FolderStatus
                 {
-                    //path = fullPath,
                     path = folder,
                     state = state,
                     diskFileCount = diskCount,
                     expectedFileCount = expectedCount
                 });
+            }
+        }
+
+        // -------------------------------------------------------------------------
+        // Import Guidance — per-manifest missing-file list, with Drive URLs
+        // -------------------------------------------------------------------------
+
+        private void BuildManifestImportList()
+        {
+            m_ManifestsNeedingImport.Clear();
+
+            string diskManifestPath = AssetPipelineConfig.GetDiskPath(AssetPipelineConfig.GetManifestFolderAssetPath());
+            if (!Directory.Exists(diskManifestPath)) return;
+
+            // Load the URL map once.
+            PackageUrlMap urlMap = LoadPackageUrlMap(diskManifestPath);
+
+            // Collect all manifest files, sort newest first by last-write time.
+            string[] manifestFiles = Directory.GetFiles(diskManifestPath, "*.json")
+                .Where(f => Path.GetFileName(f) != "package_urls.json")
+                .OrderByDescending(f => File.GetLastWriteTime(f))
+                .ToArray();
+
+            // Track which asset paths we've already found as present — so we
+            // only report the *first* (newest) manifest that mentions a missing file.
+            HashSet<string> alreadyPresent = new HashSet<string>();
+
+            foreach (string file in manifestFiles)
+            {
+                try
+                {
+                    string json = File.ReadAllText(file);
+                    var manifest = JsonUtility.FromJson<AssetPipelineManifest>(json);
+                    if (manifest?.folders == null) continue;
+
+                    string manifestFileName = Path.GetFileName(file);
+
+                    // Find which files from this manifest are not on disk.
+                    var missing = new List<string>();
+                    foreach (var folder in manifest.folders)
+                    {
+                        foreach (string assetPath in folder.files)
+                        {
+                            if (!alreadyPresent.Contains(assetPath) && !AssetPathExists(assetPath))
+                                missing.Add(assetPath);
+                        }
+                    }
+
+                    // Mark the present ones so older manifests don't re-report them.
+                    foreach (var folder in manifest.folders)
+                    {
+                        foreach (string assetPath in folder.files)
+                        {
+                            if (AssetPathExists(assetPath))
+                                alreadyPresent.Add(assetPath);
+                        }
+                    }
+
+                    if (missing.Count == 0) continue;
+
+                    // Look up the Drive URL for this manifest.
+                    string driveUrl = "";
+                    foreach (var entry in urlMap.entries)
+                    {
+                        if (entry.manifestFileName == manifestFileName)
+                        {
+                            driveUrl = entry.driveUrl;
+                            break;
+                        }
+                    }
+
+                    m_ManifestsNeedingImport.Add(new ManifestImportInfo
+                    {
+                        manifestFileName = manifestFileName,
+                        exportedBy = manifest.exportedBy ?? "",
+                        exportDate = manifest.exportDate ?? "",
+                        driveUrl = driveUrl,
+                        missingFiles = missing
+                    });
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[AssetPipelineManager] Could not read manifest {file}: {e.Message}");
+                }
+            }
+        }
+
+        private PackageUrlMap LoadPackageUrlMap(string diskManifestPath)
+        {
+            string urlFilePath = Path.Combine(diskManifestPath, "package_urls.json").Replace('\\', '/');
+            if (!File.Exists(urlFilePath)) return new PackageUrlMap();
+
+            try
+            {
+                string json = File.ReadAllText(urlFilePath);
+                return JsonUtility.FromJson<PackageUrlMap>(json) ?? new PackageUrlMap();
+            }
+            catch
+            {
+                return new PackageUrlMap();
             }
         }
 
@@ -217,8 +317,6 @@ namespace MVHS
 
             DrawFolderOverview();
             EditorGUILayout.Space(10);
-            DrawExportSection();
-            EditorGUILayout.Space(10);
             DrawImportSection();
 
             EditorGUILayout.EndScrollView();
@@ -229,18 +327,18 @@ namespace MVHS
             EditorGUILayout.Space(5);
             EditorGUILayout.LabelField("Asset Pipeline Manager", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
-                "Export asset folders into a .unitypackage for distribution, " +
-                "or import a package received from a teammate.",
+                "Shows which asset folders need importing and provides the Google Drive link for each package.\n\n" +
+                "To export a package, use Tools > MVHS > Pre-PR Checklist.",
                 MessageType.Info);
             EditorGUILayout.Space(5);
         }
 
+        // ── Folder Overview ────────────────────────────────────────────────────────
 
         private void DrawFolderOverview()
         {
             EditorGUILayout.LabelField("Folder Status", EditorStyles.boldLabel);
 
-            // Legend.
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("●  Has assets", EditorStyles.miniLabel, GUILayout.Width(100));
             EditorGUILayout.LabelField("⬇  Needs import", EditorStyles.miniLabel, GUILayout.Width(100));
@@ -267,9 +365,8 @@ namespace MVHS
 
                     case FolderState.NeedsImport:
                         icon = "⬇";
-                        tooltip = "Manifest expects " + status.expectedFileCount +
-                                  " file(s) — import the asset package";
-                        countLabel = "need " + $"{status.expectedFileCount - status.diskFileCount}";
+                        tooltip = "Manifest expects " + status.expectedFileCount + " file(s) — import the asset package";
+                        countLabel = "need " + (status.expectedFileCount - status.diskFileCount);
                         break;
 
                     case FolderState.EmptyNoManifest:
@@ -293,230 +390,127 @@ namespace MVHS
                 EditorGUILayout.EndHorizontal();
             }
 
-            // Summary warning if anything needs import.
             int needsImportCount = m_FolderStatuses.Count(s => s.state == FolderState.NeedsImport);
             if (needsImportCount > 0)
             {
                 EditorGUILayout.Space(3);
                 EditorGUILayout.HelpBox(
                     needsImportCount + " folder(s) have assets in the manifest but not on disk. " +
-                    "Import the asset package before saving any scenes or prefabs.",
+                    "Import the asset package(s) below before saving any scenes or prefabs.",
                     MessageType.Warning);
             }
         }
 
-        private void DrawExportSection()
-        {
-            EditorGUILayout.LabelField("Export", EditorStyles.boldLabel);
-
-            m_ExporterName = EditorGUILayout.TextField(
-                new GUIContent("Your Name", "Used in the manifest filename to avoid conflicts"),
-                m_ExporterName);
-
-            m_ExportDescription = EditorGUILayout.TextField(
-                new GUIContent("Description", "Brief note about what assets changed (optional)"),
-                m_ExportDescription);
-
-            bool hasAssets = m_FolderStatuses.Any(s => s.state == FolderState.Ready);
-            bool hasName = !string.IsNullOrWhiteSpace(m_ExporterName);
-            bool hasDescription = !string.IsNullOrWhiteSpace(m_ExportDescription);
-
-            EditorGUI.BeginDisabledGroup(!hasAssets || !hasName || !hasDescription);
-            if (GUILayout.Button("Export Asset Package", GUILayout.Height(30)))
-            {
-                SaveExporterName();
-                ExportPackage();
-            }
-            EditorGUI.EndDisabledGroup();
-
-            if (!hasName)
-            {
-                EditorGUILayout.HelpBox("Enter your name before exporting.", MessageType.Info);
-            }
-            else if (!hasAssets)
-            {
-                EditorGUILayout.HelpBox("No folders contain assets to export.", MessageType.Info);
-            }
-            else if (!hasDescription)
-            {
-                EditorGUILayout.HelpBox("Enter a description before exporting.", MessageType.Info);
-            }
-        }
+        // ── Import Section ─────────────────────────────────────────────────────────
 
         private void DrawImportSection()
         {
             EditorGUILayout.LabelField("Import", EditorStyles.boldLabel);
 
-            if (GUILayout.Button("Import Asset Package", GUILayout.Height(30)))
+            if (m_ManifestsNeedingImport.Count == 0)
             {
-                ImportPackage();
-            }
-        }
-
-        // -------------------------------------------------------------------------
-        // Export Logic
-        // -------------------------------------------------------------------------
-
-        private void ExportPackage()
-        {
-            HashSet<string> assetPaths = new HashSet<string>();
-            var manifestFolders = new List<ManifestFolder>();
-
-            //foreach (string folder in m_Config.assetFolders)
-            foreach (string folder in AssetPipelineConfig.projectFolders)
-            {
-                //string fullPath = m_Config.GetFullPath(folder);
-                string fullPath = folder;
-
-                if (!AssetDatabase.IsValidFolder(fullPath))
+                bool anyNeedsImport = m_FolderStatuses.Any(s => s.state == FolderState.NeedsImport);
+                if (anyNeedsImport)
                 {
-                    continue;
-                }
-
-                string[] guids = AssetDatabase.FindAssets("", new[] { fullPath });
-                var folderFiles = new List<string>();
-
-                foreach (string guid in guids)
-                {
-                    string path = AssetDatabase.GUIDToAssetPath(guid);
-                    if (AssetDatabase.IsValidFolder(path))
-                    {
-                        continue;
-                    }
-
-                    assetPaths.Add(path);
-                    folderFiles.Add(path);
-                }
-
-            }
-
-            Dictionary<string, List<string>> tempManifestBuilder = new Dictionary<string, List<string>>();
-            foreach (string assetPath in assetPaths)
-            {
-                string path = Path.GetDirectoryName(assetPath);
-                path = path.Replace("\\", "/");
-                path += "/";
-                bool hasKey = tempManifestBuilder.TryGetValue(path, out var key);
-                if (hasKey)
-                {
-                    key.Add(assetPath);
+                    // Folders need import but no manifest URL recorded yet.
+                    EditorGUILayout.HelpBox(
+                        "Some folders need assets but no Drive URL has been recorded yet.\n" +
+                        "Ask your teammate to complete the Pre-PR Checklist so a URL is saved.",
+                        MessageType.Warning);
                 }
                 else
                 {
-                    List<string> s = new List<string>();
-                    s.Add(assetPath);
-                    tempManifestBuilder.Add(path, s);
+                    EditorGUILayout.HelpBox("All folders are up to date — nothing to import.", MessageType.Info);
+                }
+            }
+            else
+            {
+                EditorGUILayout.HelpBox(
+                    "Import the packages below (newest first). After each import, click Refresh to update the list.",
+                    MessageType.Info);
+                EditorGUILayout.Space(4);
+
+                foreach (var info in m_ManifestsNeedingImport)
+                {
+                    DrawManifestImportRow(info);
+                    EditorGUILayout.Space(6);
                 }
             }
 
+            EditorGUILayout.Space(6);
 
-            foreach (var kvp in tempManifestBuilder)
+            EditorGUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("Refresh", GUILayout.Height(28)))
             {
-                manifestFolders.Add(new ManifestFolder
-                {
-                    folderPath = kvp.Key,
-                    files = kvp.Value
-                });
+                Refresh();
             }
 
-
-            if (assetPaths.Count == 0)
+            if (GUILayout.Button("Import Package from File…", GUILayout.Height(28)))
             {
-                EditorUtility.DisplayDialog(
-                    "Nothing to Export",
-                    "No assets found in the configured folders.",
-                    "OK");
-                return;
+                ImportPackageFromFile();
             }
 
-            // Ask where to save the .unitypackage.
-            string defaultSaveName = $"{m_ExporterName.Trim()}_{DateTime.Now.ToString("yyyy_MM_ddTHH_mm_ss")}";
-         
-            string defaultDir = Path.GetDirectoryName(Application.dataPath);
-            string savePath = EditorUtility.SaveFilePanel(
-                "Save Asset Package",
-                defaultDir,
-                defaultSaveName,
-                "unitypackage");
-
-            if (string.IsNullOrEmpty(savePath)) return;
-
-            // Export the package.
-            AssetDatabase.ExportPackage(
-                assetPaths.ToArray(),
-                savePath,
-                ExportPackageOptions.Recurse);
-
-            // Generate the manifest.
-            GenerateManifest(manifestFolders);
-
-            long fileSize = new FileInfo(savePath).Length;
-            string sizeLabel = fileSize > 1048576
-                ? (fileSize / 1048576f).ToString("F1") + " MB"
-                : (fileSize / 1024f).ToString("F0") + " KB";
-
-            EditorUtility.DisplayDialog(
-                "Export Complete",
-                $"Exported {assetPaths.Count} asset(s) to:\n{savePath}\n\n" +
-                $"Package size: {sizeLabel}\n\n" +
-                "A manifest file has been generated.\n" +
-                "Remember to commit the manifest to git!",
-                "OK");
-
-            Debug.Log($"[AssetPipelineManager] Exported {assetPaths.Count} assets ({sizeLabel}). Manifest generated.");
-
-            Refresh();
+            EditorGUILayout.EndHorizontal();
         }
 
-        // -------------------------------------------------------------------------
-        // Manifest Generation
-        // -------------------------------------------------------------------------
-
-        private void GenerateManifest(List<ManifestFolder> folders)
+        private void DrawManifestImportRow(ManifestImportInfo info)
         {
-            // Ensure the manifest folder exists.
-            string manifestFolderAssetPath = AssetPipelineConfig.GetManifestFolderAssetPath(); //AssetPipelineConfig.ManifestFolderPath; //m_Config.GetManifestFolderPath();
-            EnsureFolderExists(manifestFolderAssetPath);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
-            // Build the manifest.
-            var manifest = new AssetPipelineManifest
+            // Header: who exported this and when.
+            string header = string.IsNullOrEmpty(info.exportedBy)
+                ? info.manifestFileName
+                : $"{info.exportedBy}  ({info.exportDate})";
+            EditorGUILayout.LabelField(header, EditorStyles.boldLabel);
+
+            EditorGUILayout.LabelField($"Missing: {info.missingFiles.Count} file(s)", EditorStyles.miniLabel);
+
+            // Show first few missing files as a hint.
+            int previewCount = Mathf.Min(info.missingFiles.Count, 3);
+            for (int i = 0; i < previewCount; i++)
+                EditorGUILayout.LabelField("  " + info.missingFiles[i], EditorStyles.miniLabel);
+            if (info.missingFiles.Count > previewCount)
+                EditorGUILayout.LabelField($"  … and {info.missingFiles.Count - previewCount} more", EditorStyles.miniLabel);
+
+            EditorGUILayout.Space(4);
+
+            if (!string.IsNullOrEmpty(info.driveUrl))
             {
-                exportedBy = m_ExporterName.Trim(),
-                exportDate = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss"),
-                description = m_ExportDescription.Trim(),
-                folders = folders
-            };
+                // Show URL and Open button side by side.
+                EditorGUILayout.BeginHorizontal();
 
-            // Create a unique filename: manifest_Name_Date.json
-            string safeName = SanitizeFilename(m_ExporterName.Trim());
-            string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-            string fileName = $"manifest_{safeName}_{timestamp}.json";
+                // Truncate long URLs for display.
+                string displayUrl = info.driveUrl.Length > 50
+                    ? info.driveUrl.Substring(0, 47) + "..."
+                    : info.driveUrl;
+                EditorGUILayout.SelectableLabel(displayUrl, EditorStyles.miniLabel, GUILayout.Height(16));
 
-            string projectRoot = Path.GetDirectoryName(Application.dataPath);
+                if (GUILayout.Button("Open Drive", GUILayout.Width(90)))
+                {
+                    Application.OpenURL(info.driveUrl);
+                }
 
-            string fullFilePath = Path.Combine(
-                projectRoot,
-                //AssetPipelineConfig.ManifestFolderPath,
-                manifestFolderAssetPath,
-                fileName
-                );
+                EditorGUILayout.EndHorizontal();
 
-            fullFilePath = fullFilePath.Replace("\\", "/");
+                EditorGUILayout.LabelField("Download the .unitypackage from Drive, then drag it into the Project window or use 'Import Package from File…' below.", EditorStyles.wordWrappedMiniLabel);
+            }
+            else
+            {
+                EditorGUILayout.HelpBox(
+                    "No Drive URL recorded for this manifest.\n" +
+                    "Ask the student who exported it to complete the Pre-PR Checklist so the URL is saved.",
+                    MessageType.Warning);
+            }
 
-            string json = JsonUtility.ToJson(manifest, true);
-            File.WriteAllText(fullFilePath, json);
-
-            // Tell Unity about the new file.
-            AssetDatabase.Refresh();
-
-            Debug.Log($"[AssetPipelineManager] Manifest saved: {fileName}");
+            EditorGUILayout.EndVertical();
         }
 
         // -------------------------------------------------------------------------
         // Import Logic
         // -------------------------------------------------------------------------
 
-        private void ImportPackage()
+        private void ImportPackageFromFile()
         {
             string openPath = EditorUtility.OpenFilePanel(
                 "Select Asset Package",
@@ -526,10 +520,8 @@ namespace MVHS
             if (string.IsNullOrEmpty(openPath)) return;
 
             AssetDatabase.ImportPackage(openPath, true);
-
             Debug.Log($"[AssetPipelineManager] Import started from {openPath}");
         }
-
 
         // -------------------------------------------------------------------------
         // Utility
@@ -537,39 +529,16 @@ namespace MVHS
 
         private void EnsureFolderExists(string assetPath)
         {
-            // Walk down the path creating folders as needed.
             string[] parts = assetPath.Split('/');
-            string current = parts[0]; // "Assets"
+            string current = parts[0];
 
             for (int i = 1; i < parts.Length; i++)
             {
                 string next = current + "/" + parts[i];
                 if (!AssetDatabase.IsValidFolder(next))
-                {
                     AssetDatabase.CreateFolder(current, parts[i]);
-                }
                 current = next;
             }
-        }
-
-        private string SanitizeFilename(string name)
-        {
-            char[] invalid = Path.GetInvalidFileNameChars();
-            foreach (char c in invalid)
-            {
-                name = name.Replace(c, '_');
-            }
-            return name.Replace(' ', '_');
-        }
-
-        private void SaveExporterName()
-        {
-            EditorPrefs.SetString("AssetPackageManager_ExporterName", m_ExporterName);
-        }
-
-        private void LoadExporterName()
-        {
-            m_ExporterName = EditorPrefs.GetString("AssetPackageManager_ExporterName", "");
         }
     }
 }
