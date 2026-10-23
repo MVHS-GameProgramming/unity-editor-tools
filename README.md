@@ -6,21 +6,47 @@ All tools live under `Assets/Editor/MVHS/` and share a common configuration thro
 
 ## Installation
 
-1. Download the latest `.unitypackage` from the [Releases](../../releases) page
+1. Download the latest `.unitypackage` from the shared class Google Drive folder
 2. Open your Unity project
 3. Go to **Assets > Import Package > Custom Package** and select the downloaded `.unitypackage`
 4. Import all files — the tools will be placed in `Assets/Editor/MVHS/` automatically
 5. The tools are now available under **Tools > MVHS**
 
-Check the [Releases](../../releases) page for version notes when updating to a newer release.
+---
 
 ## Tools
 
-### Project Directory Creator
+### Pre-PR Checklist
 
-**Menu:** Tools > MVHS > Project Directory Creator
+**Menu:** Tools > MVHS > Pre-PR Checklist
 
-Creates the standard project folder structure used for all unity projects in game programming course. Only missing folders are created — running it on an existing project is safe. This should be the first tool run when setting up a new project.
+The main workflow tool — complete all four steps before opening a Pull Request. Steps must be done in order; each one unlocks the next.
+
+1. **Run Project Scan** — verifies all assets in `Assets/Project/` are in the correct folder. Fix any violations in Asset Structure Validator before continuing.
+2. **Generate Manifest** — scans for binary assets and holds the manifest in memory. Nothing is written to disk yet.
+3. **Export Package** — exports all binary assets as a `.unitypackage` file. Save it somewhere you can find it.
+4. **Upload to Shared Drive** — upload the `.unitypackage` to the shared class Google Drive folder, then paste the share link into the checklist and click **Save URL**. This writes the manifest and records the Drive URL so teammates can find the package.
+
+After all four steps are complete, commit the manifest and `package_urls.json`, then open your Pull Request.
+
+---
+
+### Asset Pipeline Manager
+
+**Menu:** Tools > MVHS > Asset Pipeline Manager
+
+Shows the status of all asset folders and helps teammates import missing binary assets.
+
+**Folder Status** displays each project folder with one of three states:
+- `●` Has assets on disk — good to go
+- `⬇` Manifest says files should be here but they are missing — needs import
+- `○` No assets yet — nobody has added anything here
+
+**Import** lists each manifest that has missing files, newest first. For each one it shows who exported it, how many files are missing, and a **Open Drive** button that opens the Google Drive link directly. Download the `.unitypackage` from Drive and import it using **Import Package from File…**, or drag it into the Project window.
+
+Click **Refresh** after importing to update the folder status.
+
+**Startup check:** When Unity opens the project, `AssetPipelineStartupCheck` automatically reads all manifests. If any folders are missing assets that a manifest expects, a warning dialog appears before any work is saved. Folders that are empty because no one has added assets there yet are ignored — only folders where a manifest expects files are flagged.
 
 ---
 
@@ -34,51 +60,45 @@ Scans scene and GameObject dependencies to verify that assets are in the correct
 
 - **Scene Dependency Viewer** — scans all loaded scenes and checks every referenced asset against the validation rules
 - **GameObject Dependency Viewer** — scans a single selected GameObject and its dependencies
-- **Rules** — displays rules where each asset type must be placed
+- **Rules** — displays the rules for where each asset type must be placed
 
-Assets that fail validation can be moved to the correct folder directly from the tool. Assets can also be moved inside the unity editor. **Do not move assets from outside Unity.** 
+Assets that fail validation can be moved to the correct folder directly from the tool. **Do not move assets from outside Unity** — always use Unity or this tool to move assets so `.meta` files stay in sync.
 
 ---
 
-### Asset Pipeline Manager
+### Project Directory Creator
 
-**Menu:** Tools > MVHS > Asset Pipeline Manager
+**Menu:** Tools > MVHS > Utilities > Project Directory Creator
 
-Handles exporting and importing `.unitypackage` files for distributing binary assets (models, textures, audio) that are not tracked in Git.
-
-**Export** collects all assets from the configured project folders, bundles them into a `.unitypackage` (preserving `.meta` files and GUIDs), and generates a manifest file recording what was included.
-
-**Import** opens a file browser to select and import a `.unitypackage` received from a teammate.
-
-**Startup check:** When Unity opens the project, `AssetPipelineStartupCheck` automatically reads all manifests created from exporting assets. If any folders are missing assets that the manifests say should exist, a warning dialog appears reminding to inport assets before saving any work. Folders that are empty because no one has added assets there yet are left alone — the check only flags folders where a manifest expects files.
-
-The startup check can also be run manually from **Tools > MVHS > Asset Pipeline Startup Check**.
+Creates the standard project folder structure used for all Unity projects in the game programming course. Only missing folders are created — running it on an existing project is safe. This should be the first tool run when setting up a new project.
 
 ---
 
 ## Workflow
 
-**Project lead (initial setup):**
+### Project lead (initial setup)
+
 1. Create a new Unity project
-2. Import the MVHS tools `.unitypackage` from the latest release
-3. Run **Tools > MVHS > Project Directory Creator**
+2. Import the MVHS tools `.unitypackage` from the shared class Google Drive folder
+3. Run **Tools > MVHS > Utilities > Project Directory Creator**
 4. Import assets into the appropriate project folders
-5. Run Asset Structure Validator to verify placement
-6. Run Asset Pipeline Manager > Export
-7. Upload the exported `.unitypackage` to a shared location (Google Drive)
-8. Commit and push to Git (the repo contains scripts, scenes, prefabs, manifests — not external binary assets)
+5. Run **Asset Structure Validator** to verify placement
+6. Run **Pre-PR Checklist** to export the package and record the Drive URL
+7. Commit and push to Git (the repo contains scripts, scenes, prefabs, and manifests — not binary assets)
 
-**Teammates (after cloning):**
-1. Clone the repository (the MVHS tools are already in the repo under `Assets/Editor/MVHS/`)
-2. Open Unity — the startup check warns if assets are missing
-3. Open **Tools > MVHS > Asset Pipeline Manager** > Import
-4. Select the asset `.unitypackage` from the shared location
-5. All asset references reconnect automatically
+### Teammates (after cloning)
 
-**When new assets are added:**
-1. Import assets into the correct project folders
-2. Run Asset Structure Validator to verify
-3. Export a new package and upload it
-4. Commit the new manifest file
-5. Notify teammates to pull and re-import
+1. Clone the repository — the MVHS tools are already in the repo under `Assets/Editor/MVHS/`
+2. Open Unity — the startup check warns if binary assets are missing
+3. Open **Tools > MVHS > Asset Pipeline Manager**
+4. Click **Open Drive** next to the package that has missing files
+5. Download the `.unitypackage` from Google Drive and import it using **Import Package from File…**
+6. All asset references reconnect automatically
 
+### When new assets are added (before a Pull Request)
+
+1. Add assets to the correct project folders
+2. Run **Asset Structure Validator** to verify placement
+3. Open **Tools > MVHS > Pre-PR Checklist** and complete all four steps
+4. Commit the manifest and `package_urls.json`
+5. Open your Pull Request
