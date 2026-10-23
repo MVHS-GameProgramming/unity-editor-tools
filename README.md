@@ -6,13 +6,13 @@ All tools live under `Assets/Editor/MVHS/` and share a common configuration thro
 
 ## Installation
 
-1. Download the latest `.unitypackage` from the shared class Google Drive folder
+1. Download the `.unitypackage` from the latest release
 2. Open your Unity project
 3. Go to **Assets > Import Package > Custom Package** and select the downloaded `.unitypackage`
 4. Import all files — the tools will be placed in `Assets/Editor/MVHS/` automatically
 5. The tools are now available under **Tools > MVHS**
 
----
+
 
 ## Tools
 
@@ -25,7 +25,7 @@ The main workflow tool — complete all four steps before opening a Pull Request
 1. **Run Project Scan** — verifies all assets in `Assets/Project/` are in the correct folder. Fix any violations in Asset Structure Validator before continuing.
 2. **Generate Manifest** — scans for binary assets and holds the manifest in memory. Nothing is written to disk yet.
 3. **Export Package** — exports all binary assets as a `.unitypackage` file. Save it somewhere you can find it.
-4. **Upload to Shared Drive** — upload the `.unitypackage` to the shared class Google Drive folder, then paste the share link into the checklist and click **Save URL**. This writes the manifest and records the Drive URL so teammates can find the package.
+4. **Upload to Shared Drive** — upload the `.unitypackage` to the shared team drive (Google Drive) folder, then paste the share link into the checklist and click **Save URL**. This writes the manifest and records the Drive URL so teammates can find the package.
 
 After all four steps are complete, commit the manifest and `package_urls.json`, then open your Pull Request.
 
@@ -42,7 +42,7 @@ Shows the status of all asset folders and helps teammates import missing binary 
 - `⬇` Manifest says files should be here but they are missing — needs import
 - `○` No assets yet — nobody has added anything here
 
-**Import** lists each manifest that has missing files, newest first. For each one it shows who exported it, how many files are missing, and a **Open Drive** button that opens the Google Drive link directly. Download the `.unitypackage` from Drive and import it using **Import Package from File…**, or drag it into the Project window.
+**Import** lists each manifest that has missing files, newest first. For each one it shows who exported it, how many files are missing, and a **Open Drive** button that opens the drive link directly. Download the `.unitypackage` from the shared drive and import it using **Import Package from File…**, or drag it into the Project window.
 
 Click **Refresh** after importing to update the folder status.
 
@@ -72,18 +72,18 @@ Assets that fail validation can be moved to the correct folder directly from the
 
 Creates the standard project folder structure used for all Unity projects in the game programming course. Only missing folders are created — running it on an existing project is safe. This should be the first tool run when setting up a new project.
 
----
+
 
 ## Workflow
 
 ### Project lead (initial setup)
 
 1. Create a new Unity project
-2. Import the MVHS tools `.unitypackage` from the shared class Google Drive folder
+2. Import the MVHS tools `.unitypackage` from the latest release
 3. Run **Tools > MVHS > Utilities > Project Directory Creator**
 4. Import assets into the appropriate project folders
 5. Run **Asset Structure Validator** to verify placement
-6. Run **Pre-PR Checklist** to export the package and record the Drive URL
+6. Run **Pre-PR Checklist** to export the package and record the shared drive URL
 7. Commit and push to Git (the repo contains scripts, scenes, prefabs, and manifests — not binary assets)
 
 ### Teammates (after cloning)
@@ -92,7 +92,7 @@ Creates the standard project folder structure used for all Unity projects in the
 2. Open Unity — the startup check warns if binary assets are missing
 3. Open **Tools > MVHS > Asset Pipeline Manager**
 4. Click **Open Drive** next to the package that has missing files
-5. Download the `.unitypackage` from Google Drive and import it using **Import Package from File…**
+5. Download the `.unitypackage` from the shared drive and import it using **Import Package from File…**
 6. All asset references reconnect automatically
 
 ### When new assets are added (before a Pull Request)
