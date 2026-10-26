@@ -6,7 +6,7 @@ All tools live under `Assets/Editor/MVHS/` and share a common configuration thro
 
 ## Installation
 
-1. Download the `.unitypackage` from the latest release
+1. Download the `.unitypackage` from the shared class Google Drive folder
 2. Open your Unity project
 3. Go to **Assets > Import Package > Custom Package** and select the downloaded `.unitypackage`
 4. Import all files — the tools will be placed in `Assets/Editor/MVHS/` automatically
@@ -20,14 +20,15 @@ All tools live under `Assets/Editor/MVHS/` and share a common configuration thro
 
 **Menu:** Tools > MVHS > Pre-PR Checklist
 
-The main workflow tool — complete all four steps before opening a Pull Request. Steps must be done in order; each one unlocks the next.
+The main workflow tool — complete all five steps before opening a Pull Request. Steps must be done in order; each one unlocks the next.
 
-1. **Run Project Scan** — verifies all assets in `Assets/Project/` are in the correct folder. Fix any violations in Asset Structure Validator before continuing.
-2. **Generate Manifest** — scans for binary assets and holds the manifest in memory. Nothing is written to disk yet.
-3. **Export Package** — exports all binary assets as a `.unitypackage` file. Save it somewhere you can find it.
-4. **Upload to Shared Drive** — upload the `.unitypackage` to the shared team drive (Google Drive) folder, then paste the share link into the checklist and click **Save URL**. This writes the manifest and records the Drive URL so teammates can find the package.
+1. **Run Project Scan** — verifies all assets in `Assets/Project/` are in the correct folder. A warning appears if you have unsaved scene changes — save first (Ctrl+Shift+S) so results reflect what is on disk. Fix any violations in Asset Structure Validator before continuing.
+2. **Check for Missing References** — scans every prefab and scene in `Assets/Project/` for broken asset references. If a prefab or scene references a file that does not exist on disk, it is listed here. Fix all broken references before continuing.
+3. **Generate Manifest** — saves all open scenes and assets, then scans for binary assets and holds the manifest in memory. Nothing is written to disk yet.
+4. **Export Package** — exports all binary assets as a `.unitypackage` file. Save it somewhere you can find it.
+5. **Upload to Shared Drive** — upload the `.unitypackage` to the shared team Google Drive folder, then paste the share link into the checklist and click **Save URL**. This writes the manifest to disk and records the Drive URL so teammates can find the package.
 
-After all four steps are complete, commit the manifest and `package_urls.json`, then open your Pull Request.
+After all five steps are complete, commit the manifest and `package_urls.json`, then open your Pull Request.
 
 ---
 
@@ -42,7 +43,7 @@ Shows the status of all asset folders and helps teammates import missing binary 
 - `⬇` Manifest says files should be here but they are missing — needs import
 - `○` No assets yet — nobody has added anything here
 
-**Import** lists each manifest that has missing files, newest first. For each one it shows who exported it, how many files are missing, and a **Open Drive** button that opens the drive link directly. Download the `.unitypackage` from the shared drive and import it using **Import Package from File…**, or drag it into the Project window.
+**Import** lists each manifest that has missing files, newest first. For each one it shows who exported it, how many files are missing, and an **Open Drive** button that opens the Drive link directly. Download the `.unitypackage` from the shared drive and import it using **Import Package from File…**, or drag it into the Project window.
 
 Click **Refresh** after importing to update the folder status.
 
@@ -72,6 +73,24 @@ Assets that fail validation can be moved to the correct folder directly from the
 
 Creates the standard project folder structure used for all Unity projects in the game programming course. Only missing folders are created — running it on an existing project is safe. This should be the first tool run when setting up a new project.
 
+---
+
+### Manifest Audit
+
+**Menu:** Tools > MVHS > Utilities > Manifest Audit (Instructor)
+
+An instructor-only read-only tool that shows every file recorded across all manifests, whether it exists on disk, and whether any scene or prefab in the project references it.
+
+**Columns:**
+- **Asset Path** — the file path as recorded in the manifest. Click to ping the asset in the Project window.
+- **On Disk** — ✓ if the file exists on disk, ✗ if it is missing (shown in red)
+- **Referenced** — ✓ if a scene or prefab depends on this file, ✗ if nothing references it (shown in amber), — if the file is missing from disk and could not be checked
+- **In Manifests** — which manifest files list this asset
+
+**Filter toggles** at the top let you show or hide rows by disk and reference status.
+
+Use this tool to identify stale manifest entries — files that appear in a manifest but are no longer referenced anywhere in the project. To clean up, manually edit the relevant manifest JSON files and commit. This tool makes no changes to any file.
+
 
 
 ## Workflow
@@ -79,11 +98,11 @@ Creates the standard project folder structure used for all Unity projects in the
 ### Project lead (initial setup)
 
 1. Create a new Unity project
-2. Import the MVHS tools `.unitypackage` from the latest release
+2. Import the MVHS tools `.unitypackage` from the shared class Google Drive folder
 3. Run **Tools > MVHS > Utilities > Project Directory Creator**
 4. Import assets into the appropriate project folders
 5. Run **Asset Structure Validator** to verify placement
-6. Run **Pre-PR Checklist** to export the package and record the shared drive URL
+6. Run **Pre-PR Checklist** to export the package and record the shared Drive URL
 7. Commit and push to Git (the repo contains scripts, scenes, prefabs, and manifests — not binary assets)
 
 ### Teammates (after cloning)
@@ -99,6 +118,6 @@ Creates the standard project folder structure used for all Unity projects in the
 
 1. Add assets to the correct project folders
 2. Run **Asset Structure Validator** to verify placement
-3. Open **Tools > MVHS > Pre-PR Checklist** and complete all four steps
+3. Open **Tools > MVHS > Pre-PR Checklist** and complete all five steps
 4. Commit the manifest and `package_urls.json`
 5. Open your Pull Request
