@@ -6,7 +6,7 @@ All tools live under `Assets/Editor/MVHS/` and share a common configuration thro
 
 ## Installation
 
-1. Download the `.unitypackage` from the shared class Google Drive folder
+1. Download the `.unitypackage` from the latest release
 2. Open your Unity project
 3. Go to **Assets > Import Package > Custom Package** and select the downloaded `.unitypackage`
 4. Import all files — the tools will be placed in `Assets/Editor/MVHS/` automatically
@@ -26,7 +26,7 @@ The main workflow tool — complete all five steps before opening a Pull Request
 2. **Check for Missing References** — scans every prefab and scene in `Assets/Project/` for broken asset references. If a prefab or scene references a file that does not exist on disk, it is listed here. Fix all broken references before continuing.
 3. **Generate Manifest** — saves all open scenes and assets, then scans for binary assets and holds the manifest in memory. Nothing is written to disk yet.
 4. **Export Package** — exports all binary assets as a `.unitypackage` file. Save it somewhere you can find it.
-5. **Upload to Shared Drive** — upload the `.unitypackage` to the shared team Google Drive folder, then paste the share link into the checklist and click **Save URL**. This writes the manifest to disk and records the Drive URL so teammates can find the package.
+5. **Upload to Shared Drive** — upload the `.unitypackage` to the shared team shared drive folder, then paste the share link into the checklist and click **Save URL**. This writes the manifest to disk and records the Drive URL so teammates can find the package.
 
 After all five steps are complete, commit the manifest and `package_urls.json`, then open your Pull Request.
 
@@ -77,9 +77,9 @@ Creates the standard project folder structure used for all Unity projects in the
 
 ### Manifest Audit
 
-**Menu:** Tools > MVHS > Utilities > Manifest Audit (Instructor)
+**Menu:** Tools > MVHS > Utilities > Manifest Audit
 
-An instructor-only read-only tool that shows every file recorded across all manifests, whether it exists on disk, and whether any scene or prefab in the project references it.
+A read-only tool that shows every file recorded across all manifests, whether it exists on disk, and whether any scene or prefab in the project references it.
 
 **Columns:**
 - **Asset Path** — the file path as recorded in the manifest. Click to ping the asset in the Project window.
@@ -98,7 +98,7 @@ Use this tool to identify stale manifest entries — files that appear in a mani
 ### Project lead (initial setup)
 
 1. Create a new Unity project
-2. Import the MVHS tools `.unitypackage` from the shared class Google Drive folder
+2. Import the MVHS tools `.unitypackage` from the shared drive folder
 3. Run **Tools > MVHS > Utilities > Project Directory Creator**
 4. Import assets into the appropriate project folders
 5. Run **Asset Structure Validator** to verify placement
